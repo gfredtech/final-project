@@ -1,0 +1,93 @@
+This is a machine-learning project which takes in a 3-d CT scan of the human torso as input
+and produce as output the location of any suspected malignant tumors, if they exist.
+CT scans are essentially three-dimensional x-rays,
+represented as a three-dimensional array of single-channel intensity-is-density data.
+
+Voxel = Volumetric pixel. think of this as a 3-d picture
+
+first, we identify potentially interesting voxels of the CT scan (using a technique
+known as "segmentation"). This will allow us to ignore huge swathes of uninteresting anatomy
+(can’t have lung cancer in the stomach, for example).
+Then, we Cluster interesting voxels into lumps called nodules. A nodule is any of the myriad lumps and bumps
+that might appear inside of someone’s lungs. Nodules have a wide variety of causes
+— infection, inflammation, blood supply issues,
+malformed blood vessels, disease, benign tumors, or cancer.
+Finally, we Classify identified nodules as benign or malignant tumors.
+
+We will be using the LUNA-16 dataset which is freely available. It contains over 100GB of CT scan data
+as well as an human-labelled data in the form of a spreadsheet which classifies it as malignant or benign.
+The job of our classifier is to use these to classify new, unseen data. This is known as supervised learning.
+
+----------------------
+structure of the code
+----------------------
+data/part2/luna/candidates.csv - Contains all information about the nodules, both malignant and benign.
+
+data/part2/luna/annotations.csv - Contains nodules that have been flagged as malignant.
+
+
+
+
+dsets.py => This loads and prepares the dataset to be used to training
+    - getCandidateInfoList() -> Constructs a set of the dataset along with its class(malignant or benign)
+                              It is written such that only the subset of the dataset we have been able to download
+                              is used for building our training and testing datasets.
+    - getCandidateInfoDict() -> Converts the data from 1 into a python dictionary(key-value pairs)
+
+    - class Ct -> Represents a single CT scan. We load our Ct scan using the sitk library. Ct scans are identified using
+                  the series_uid property.
+            - buildAnnotationMask() -> creates bounding boxes around nodules. so we know where they are located
+            - getRawCandidate() -> takes the center expressed in the patient coordinate system (X,Y,Z), just
+                                   as it’s specified in the LUNA CSV data, as well as a width in voxels.
+                                   It returns a cubic chunk of CT, as well as the center of the nodule
+                                   converted to array coordinates.
+
+    - class LunaDataset -> This class subclasses the Dataset class from PyTorch, which informs the rest of our
+                           PyTorch code about which dataset we want to use.
+                           Each Ct instance represents hundreds of different samples that we can use for training
+                           our model or testing its effectiveness. Our LunaDataset class will normalize those samples,
+                           flattening them into a single list that can be retrieved without regard for which Ct the sample originates from.
+
+    - getCt, getCtRawCandidate(), etc. -> Cached instances wrapping the Ct class methods, to make our code faster.
+
+    - all other classes that are subclasses of Dataset -> Special instances of LunaDataset that were used
+                                                          for testing purposes only.
+
+
+
+model.py => Contains several machine learning models for our project.
+            - LunaModel -> A convolutional neural network(CNN) with 4 convolutional layers and a final Linear layer
+                           for outputting whether a nodule is malignant or benign.
+            - ModifiedLunaModel -> A larger CNN with 5 conv layers and 2 final linear layers
+
+            - LunaBlock -> Helper class for defining our first simpler model.
+
+            - Unet -> An implementation of the Unet model(you can read more here)
+
+            - SegmentationAugmentation -> An implementation of an image segmentation model.
+                                          This is what allows us to identify interesting voxels of CT scans.
+                                          It also does image augmentation. We apply transformations to our dataset,
+                                          creating new data so that our sample size becomes larger.
+                                          This helps improve training accuracy.
+
+
+
+training.py => This is where we: (i) Initialize our machine learning model
+                                 (ii) Load our datasets and split them into training and validation sets,
+                                 (iii) Actually train our model
+                                 (iv) evaluate our model on the validation set whiles training.
+
+Definition of terms:
+batch size => the number of samples that we feed to our model in a training loop.
+we don't feed our data one at a time, but rather in batches.
+
+epochs => a more proper name for a complete loop over the entire dataset.
+
+training loop => a complete loop over one batch of from our data loader.
+
+optimizer => the algorithm that optimizes our model, or fine-tunes it so that the predictions get better.
+There are many kinds of optimizers, such as standard gradient descent, Adam, etc. we use SGD to optimize our model.
+
+dataLoader => We load our training and validation set using initTrainingDL and initValDL.
+DataLoaders is a concept from pytorch which represents our dataset
+as well as specify the batch_size of our data at every training loop
